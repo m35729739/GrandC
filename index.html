@@ -572,7 +572,7 @@
     // API SERVER (твой сервер на PythonAnywhere)
     const API_URL = 'https://Misha102030.pythonanywhere.com/api';
     
-    // ID текущего пользователя (хранится в localStorage, но данные на сервере)
+    // ID текущего пользователя
     let currentUserId = localStorage.getItem('grand_coin_user_id');
     let gameData = {
         score: 0,
@@ -606,6 +606,7 @@
             currentUserId = data.user_id;
             localStorage.setItem('grand_coin_user_id', currentUserId);
             gameData.nickname = data.nickname;
+            document.getElementById('player-nickname').value = gameData.nickname;
         }
         
         // Загрузка данных пользователя
@@ -625,6 +626,7 @@
                 gameData.ownedAvatars = userData.owned_avatars || [0];
                 gameData.business = userData.business_levels || { shaurma: 0, coffee: 0, carwash: 0, computer: 0, crypto: 0, hotel: 0, oil: 0, space: 0 };
                 gameData.adminLevel = userData.admin_level || 0;
+                document.getElementById('player-nickname').value = gameData.nickname;
             }
         } catch(e) {
             console.log("Ошибка загрузки данных", e);
@@ -632,7 +634,7 @@
         updateUI();
     }
     
-    // Сохранение данных на сервер (только никнейм и аватарки)
+    // Сохранение данных на сервер
     async function saveUserData() {
         try {
             await fetch(`${API_URL}/user/${currentUserId}`, {
@@ -641,7 +643,16 @@
                 body: JSON.stringify({
                     nickname: gameData.nickname,
                     current_avatar_id: gameData.currentAvatarId,
-                    owned_avatars: gameData.ownedAvatars
+                    owned_avatars: gameData.ownedAvatars,
+                    score: gameData.score,
+                    total_earned: gameData.totalEarned,
+                    energy: gameData.energy,
+                    boost_tap_lvl: gameData.boostTapLvl,
+                    boost_energy_lvl: gameData.boostEnergyLvl,
+                    boost_regen_lvl: gameData.boostRegenLvl,
+                    boost_auto_lvl: gameData.boostAutoLvl,
+                    business_levels: gameData.business,
+                    admin_level: gameData.adminLevel
                 })
             });
         } catch(e) {}
@@ -706,7 +717,7 @@
         return Infinity;
     }
     
-    // Функция добавления монет (отправка на сервер)
+    // Функция добавления монет
     async function addCoins(amount, source = "game") {
         if (amount <= 0) return;
         
@@ -721,12 +732,14 @@
                 gameData.score = data.balance;
                 gameData.totalEarned += amount;
                 updateUI();
+                saveUserData();
             }
         } catch(e) {
-            // Если сервер не отвечает, добавляем локально (запасной вариант)
+            // Если сервер не отвечает, добавляем локально
             gameData.score += amount;
             gameData.totalEarned += amount;
             updateUI();
+            saveUserData();
         }
     }
     
@@ -1048,7 +1061,7 @@
         updateUI();
     }, 1000);
     
-    // Админка (локальная, для теста)
+    // Админка (локальная)
     let globalPromos = {};
     
     function handleAdminClick() {
