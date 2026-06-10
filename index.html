@@ -104,7 +104,6 @@
             width: 100%;
             max-width: 380px;
             text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
             max-height: 85vh;
             overflow-y: auto;
         }
@@ -416,7 +415,7 @@
 <div class="admin-top-badge" id="admin-top-header">Администратор</div>
 
 <div class="top-bar">
-    <button class="btn-admin-open" onclick="handleAdminClick()">⚙️Админ-Панель</button>
+    <button class="btn-admin-open" onclick="handleAdminClick()">⚙️ Админ-Панель</button>
 </div>
 
 <div class="modal" id="login-modal">
@@ -570,9 +569,10 @@
 </div>
 
 <script>
-    // Базовые настройки и данные
-    const API_URL = 'https://ваш-сервер.pythonanywhere.com/api'; // Замените на реальный адрес сервера
+    // API SERVER (твой сервер на PythonAnywhere)
+    const API_URL = 'https://Misha102030.pythonanywhere.com/api';
     
+    // ID текущего пользователя (хранится в localStorage, но данные на сервере)
     let currentUserId = localStorage.getItem('grand_coin_user_id');
     let gameData = {
         score: 0,
@@ -588,8 +588,64 @@
         adminLevel: 0,
         business: { shaurma: 0, coffee: 0, carwash: 0, computer: 0, crypto: 0, hotel: 0, oil: 0, space: 0 },
         isInfiniteEnergy: false,
-        customMaxEnergy: 0
+        customMaxEnergy: 0,
+        dailyCurrentDay: 1,
+        dailyLastClaimTime: 0
     };
+    
+    // Загрузка данных с сервера
+    async function loadUserData() {
+        if (!currentUserId) {
+            // Регистрация нового пользователя
+            const response = await fetch(`${API_URL}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nickname: `Игрок_${Math.floor(Math.random() * 10000)}` })
+            });
+            const data = await response.json();
+            currentUserId = data.user_id;
+            localStorage.setItem('grand_coin_user_id', currentUserId);
+            gameData.nickname = data.nickname;
+        }
+        
+        // Загрузка данных пользователя
+        try {
+            const response = await fetch(`${API_URL}/user/${currentUserId}`);
+            if (response.ok) {
+                const userData = await response.json();
+                gameData.score = userData.score || 0;
+                gameData.totalEarned = userData.total_earned || 0;
+                gameData.energy = userData.energy || 5000;
+                gameData.boostTapLvl = userData.boost_tap_lvl || 1;
+                gameData.boostEnergyLvl = userData.boost_energy_lvl || 1;
+                gameData.boostRegenLvl = userData.boost_regen_lvl || 1;
+                gameData.boostAutoLvl = userData.boost_auto_lvl || 0;
+                gameData.nickname = userData.nickname || "Игрок";
+                gameData.currentAvatarId = userData.current_avatar_id || 0;
+                gameData.ownedAvatars = userData.owned_avatars || [0];
+                gameData.business = userData.business_levels || { shaurma: 0, coffee: 0, carwash: 0, computer: 0, crypto: 0, hotel: 0, oil: 0, space: 0 };
+                gameData.adminLevel = userData.admin_level || 0;
+            }
+        } catch(e) {
+            console.log("Ошибка загрузки данных", e);
+        }
+        updateUI();
+    }
+    
+    // Сохранение данных на сервер (только никнейм и аватарки)
+    async function saveUserData() {
+        try {
+            await fetch(`${API_URL}/user/${currentUserId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nickname: gameData.nickname,
+                    current_avatar_id: gameData.currentAvatarId,
+                    owned_avatars: gameData.ownedAvatars
+                })
+            });
+        } catch(e) {}
+    }
     
     // Список бизнесов
     const businessItems = [
@@ -650,24 +706,35 @@
         return Infinity;
     }
     
-    function saveData() {
-        localStorage.setItem('grand_coin_game_data', JSON.stringify(gameData));
-        localStorage.setItem('grand_coin_user_id', currentUserId);
-    }
-    
-    function addCoins(amount, source = "game") {
+    // Функция добавления монет (отправка на сервер)
+    async function addCoins(amount, source = "game") {
         if (amount <= 0) return;
-        gameData.score += amount;
-        gameData.totalEarned += amount;
-        saveData();
-        updateUI();
+        
+        try {
+            const response = await fetch(`${API_URL}/add_coins`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: currentUserId, amount: amount })
+            });
+            const data = await response.json();
+            if (data.success) {
+                gameData.score = data.balance;
+                gameData.totalEarned += amount;
+                updateUI();
+            }
+        } catch(e) {
+            // Если сервер не отвечает, добавляем локально (запасной вариант)
+            gameData.score += amount;
+            gameData.totalEarned += amount;
+            updateUI();
+        }
     }
     
     function saveNickname() {
         let newNick = document.getElementById('player-nickname').value.trim();
         if (!newNick) newNick = "Игрок_" + Math.floor(Math.random() * 10000);
         gameData.nickname = newNick;
-        saveData();
+        saveUserData();
         updateUI();
     }
     
@@ -700,7 +767,7 @@
             if (gameData.score >= biz.price) {
                 gameData.score -= biz.price;
                 gameData.business[biz.id] = (gameData.business[biz.id] || 0) + 1;
-                saveData();
+                saveUserData();
                 updateUI();
                 openBusinessSheet(id);
             } else alert("Недостаточно монет!");
@@ -741,14 +808,14 @@
         if (gameData.score >= price) {
             gameData.score -= price;
             gameData.ownedAvatars.push(id);
-            saveData();
+            saveUserData();
             updateUI();
         } else alert("Недостаточно монет!");
     }
     
     function equipAvatar(id) {
         gameData.currentAvatarId = id;
-        saveData();
+        saveUserData();
         updateUI();
     }
     
@@ -770,11 +837,12 @@
         let container = document.getElementById('daily-days-container');
         if (!container) return;
         container.innerHTML = "";
+        let canClaim = (Date.now() - (gameData.dailyLastClaimTime || 0)) >= 24 * 3600 * 1000;
         for (let d = 1; d <= 31; d++) {
             let reward = { label: `+${d * 5000} G` };
             if (d === 5) reward = { label: "🔨 Сила клика +5 ур." };
             if (d === 10) reward = { label: "+50,000 G" };
-            if (d === 15) reward = { label: "🌀Регенерация +10 ур." };
+            if (d === 15) reward = { label: "🌀 Регенерация +10 ур." };
             if (d === 22) reward = { label: "⚡ Энергия +15 ур." };
             if (d === 31) reward = { label: "🎁 +1,000,000 G" };
             let box = document.createElement('div');
@@ -787,7 +855,6 @@
         }
         let btn = document.getElementById('btn-claim-daily');
         if (btn) {
-            let canClaim = (Date.now() - (gameData.dailyLastClaimTime || 0)) >= 24 * 3600 * 1000;
             if (!canClaim) {
                 btn.disabled = true;
                 let diff = (24 * 3600 * 1000) - (Date.now() - (gameData.dailyLastClaimTime || 0));
@@ -820,7 +887,7 @@
         if (rewardVal > 0) addCoins(rewardVal, "daily");
         gameData.dailyLastClaimTime = now;
         gameData.dailyCurrentDay = (day >= 31) ? 1 : day + 1;
-        saveData();
+        saveUserData();
         updateUI();
         alert("Награда получена!");
     }
@@ -843,6 +910,7 @@
             if (gameData.score >= price && gameData.boostEnergyLvl < 1000) {
                 gameData.score -= price;
                 gameData.boostEnergyLvl++;
+                gameData.energy = getMaxEnergy();
             } else { alert("Недостаточно монет!"); return; }
         } else if (type === 'regen') {
             let price = getBoosterPrice('regen', gameData.boostRegenLvl);
@@ -851,7 +919,7 @@
                 gameData.boostRegenLvl++;
             } else { alert("Недостаточно монет!"); return; }
         }
-        saveData();
+        saveUserData();
         updateUI();
     }
     
@@ -976,11 +1044,11 @@
         } else if (gameData.energy < maxE) {
             gameData.energy = Math.min(maxE, gameData.energy + getRegenPower());
         }
-        saveData();
+        saveUserData();
         updateUI();
     }, 1000);
     
-    // Админка
+    // Админка (локальная, для теста)
     let globalPromos = {};
     
     function handleAdminClick() {
@@ -1014,26 +1082,26 @@
             gameData.currentAvatarId = 99;
             closeModal('login-modal');
             showAdminModal();
-            saveData();
+            saveUserData();
             updateUI();
         } else if (login === "admin2" && pass === "GRAND2026") {
             gameData.adminLevel = 2;
             closeModal('login-modal');
             showAdminModal();
-            saveData();
+            saveUserData();
             updateUI();
         } else if (login === "moderator" && pass === "MODER123") {
             gameData.adminLevel = 1;
             closeModal('login-modal');
             showAdminModal();
-            saveData();
+            saveUserData();
             updateUI();
         } else alert("Неверный логин или пароль!");
     }
     
     function adminLogout() {
         gameData.adminLevel = 0;
-        saveData();
+        saveUserData();
         updateUI();
         closeModal('admin-modal');
     }
@@ -1061,30 +1129,30 @@
     
     function adminGiveAllAvatars() {
         avatarItems.forEach(item => { if (!gameData.ownedAvatars.includes(item.id)) gameData.ownedAvatars.push(item.id); });
-        saveData(); updateUI(); alert("Все аватарки и ободки выданы!");
+        saveUserData(); updateUI(); alert("Все аватарки и ободки выданы!");
     }
     
     function adminGiveAllUpgrades() {
         gameData.boostTapLvl = 50; gameData.boostEnergyLvl = 50; gameData.boostRegenLvl = 50;
-        saveData(); updateUI(); alert("Прокачка выдана (50 ур)!");
+        saveUserData(); updateUI(); alert("Прокачка выдана (50 ур)!");
     }
     
     function adminGiveUltimateMax() {
         gameData.boostTapLvl = 1000; gameData.boostEnergyLvl = 1000; gameData.boostRegenLvl = 1000;
         gameData.boostAutoLvl = 10; gameData.customMaxEnergy = 0; gameData.energy = getMaxEnergy();
-        saveData(); updateUI(); alert("Максимальная прокачка выдана!");
+        saveUserData(); updateUI(); alert("Максимальная прокачка выдана!");
     }
     
     function toggleInfiniteEnergy() {
         let chk = document.getElementById('adm-infinite-energy');
         if (chk) gameData.isInfiniteEnergy = chk.checked;
         if (gameData.isInfiniteEnergy) gameData.energy = getMaxEnergy();
-        saveData(); updateUI();
+        saveUserData(); updateUI();
     }
     
     function adminRestoreEnergy() {
         gameData.energy = getMaxEnergy();
-        saveData(); updateUI();
+        saveUserData(); updateUI();
         alert("Энергия восстановлена!");
     }
     
@@ -1099,33 +1167,23 @@
             gameData.business = { shaurma: 0, coffee: 0, carwash: 0, computer: 0, crypto: 0, hotel: 0, oil: 0, space: 0 };
             gameData.boostTapLvl = 1; gameData.boostEnergyLvl = 1; gameData.boostRegenLvl = 1; gameData.boostAutoLvl = 0;
             gameData.isInfiniteEnergy = false; gameData.customMaxEnergy = 0;
-            saveData();
+            saveUserData();
             closeModal('admin-modal');
             let banScreen = document.getElementById('global-ban-screen');
             if (banScreen) banScreen.style.display = 'flex';
             alert(`Игрок ${nick} забанен и обнулён!`);
-        } else { saveData(); alert(`Никнейм "${nick}" добавлен в бан-лист.`); }
+        } else { saveUserData(); alert(`Никнейм "${nick}" добавлен в бан-лист.`); }
     }
     
     // Инициализация
     function init() {
-        let savedData = localStorage.getItem('grand_coin_game_data');
-        if (savedData) {
-            try {
-                let parsed = JSON.parse(savedData);
-                Object.assign(gameData, parsed);
-            } catch(e) {}
-        }
-        if (!gameData.dailyCurrentDay) gameData.dailyCurrentDay = 1;
-        if (!gameData.dailyLastClaimTime) gameData.dailyLastClaimTime = 0;
-        if (!gameData.ownedAvatars) gameData.ownedAvatars = [0];
-        if (!gameData.business) gameData.business = { shaurma: 0, coffee: 0, carwash: 0, computer: 0, crypto: 0, hotel: 0, oil: 0, space: 0 };
-        if (!gameData.nickname) gameData.nickname = "Игрок_" + Math.floor(Math.random() * 10000);
+        let savedNick = localStorage.getItem('grand_coin_nickname');
+        if (savedNick) gameData.nickname = savedNick;
         
         let nickInput = document.getElementById('player-nickname');
         if (nickInput) nickInput.value = gameData.nickname;
         
-        updateUI();
+        loadUserData();
     }
     
     init();
